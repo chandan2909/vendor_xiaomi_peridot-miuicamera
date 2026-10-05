@@ -1,6 +1,7 @@
-name: Makefile CI
+name: Build MiuiCamera APK
 
 on:
+  workflow_dispatch:
   push:
     branches: [ "lineage-24.0" ]
   pull_request:
@@ -14,14 +15,34 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: configure
-      run: ./configure
+    - name: Assemble and validate MiuiCamera.apk
+      shell: bash
+      run: |
+        set -euo pipefail
 
-    - name: Install dependencies
-      run: make
+        apk_dir="proprietary/system/priv-app/MiuiCamera"
+        apk_path="${apk_dir}/MiuiCamera.apk"
 
-    - name: Run check
-      run: make check
+        mapfile -t parts < <(find "${apk_dir}" -maxdepth 1 -type f -name 'MiuiCamera.part_*' | sort -V)
+        if [ "${#parts[@]}" -eq 0 ]; then
+          echo "No MiuiCamera part files found in ${apk_dir}" >&2
+          exit 1
+        fi
 
-    - name: Run distcheck
-      run: make distcheck
+        rm -f "${apk_path}"
+        cat "${parts[@]}" > "${apk_path}"
+
+        if [ ! -s "${apk_path}" ]; then
+          echo "Reconstructed APK is missing or empty: ${apk_path}" >&2
+          exit 1
+        fi
+
+        unzip -t "${apk_path}" >/dev/null
+        echo "Created and validated ${apk_path}"
+
+    - name: Upload MiuiCamera APK artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: MiuiCamera-apk
+        path: proprietary/system/priv-app/MiuiCamera/MiuiCamera.apk
+        if-no-files-found: error
